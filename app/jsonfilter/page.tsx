@@ -159,7 +159,7 @@ export default function Component() {
   };
 
   return (
-    <div className="container mx-auto flex flex-col h-full">
+    <div className="container flex flex-col h-full w-full">
       <div className="w-full flex-1 flex space-x-4 overflow-hidden">
         <div className="flex-1 flex flex-col space-y-2">
           <label htmlFor="json-input" className="font-medium">
