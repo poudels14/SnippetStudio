@@ -8,8 +8,6 @@ import { debounce } from "lodash-es";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-const defaultJSON = {};
-
 interface AppState {
   jsonInput: string;
   parsedJSON: any;
@@ -25,10 +23,10 @@ interface AppState {
 const useAppStore = create<AppState>()(
   persist(
     (set) => ({
-      jsonInput: JSON.stringify(defaultJSON, null, 2),
-      parsedJSON: defaultJSON,
+      jsonInput: JSON.stringify({}, null, 2),
+      parsedJSON: {},
       filters: "",
-      filteredJSON: defaultJSON,
+      filteredJSON: {},
       errors: [],
       setJsonInput: (input) =>
         set((state) => {
@@ -53,47 +51,58 @@ const useAppStore = create<AppState>()(
   ),
 );
 
-const filterJSON = (
-  json: any,
-  filters: string[],
-): { result: any; errors: string[] } => {
-  if (filters.length === 0) {
-    return { result: json, errors: [] };
-  }
+const applyFilter = (data, filter) => {
+  const paths = filter.split(".");
 
-  const result: any = {};
-  const errors: string[] = [];
+  const applyFilterRecursive = (current, pathIndex) => {
+    if (pathIndex >= paths.length) return current;
 
-  const applyFilter = (obj: any, filter: string, target: any) => {
-    const parts = filter.split(".");
-    let current = obj;
-    let currentTarget = target;
+    const path = paths[pathIndex];
 
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      if (part === "*" && Array.isArray(current)) {
-        current.forEach((item, index) => {
-          if (!currentTarget[index]) currentTarget[index] = {};
-          applyFilter(item, parts.slice(i + 1).join("."), currentTarget[index]);
-        });
-        return;
-      } else if (current && typeof current === "object" && part in current) {
-        if (i === parts.length - 1) {
-          currentTarget[part] = current[part];
-        } else {
-          currentTarget[part] = Array.isArray(current[part]) ? [] : {};
-          current = current[part];
-          currentTarget = currentTarget[part];
-        }
-      } else {
-        errors.push(`Invalid filter: ${filter}`);
-        return;
-      }
+    if (path === "*" && Array.isArray(current)) {
+      return current.map((item) => applyFilterRecursive(item, pathIndex + 1));
     }
+
+    if (path.includes(",")) {
+      const fields = path.split(",");
+      const result = {};
+      fields.forEach((field) => {
+        if (current && typeof current === "object" && field in current) {
+          result[field] = current[field];
+        }
+      });
+      return Object.keys(result).length > 0 ? result : undefined;
+    }
+
+    if (current && typeof current === "object" && path in current) {
+      const result = applyFilterRecursive(current[path], pathIndex + 1);
+      return result === undefined ? undefined : { [path]: result };
+    }
+
+    return undefined;
   };
 
-  filters.forEach((filter) => applyFilter(json, filter, result));
-  return { result, errors };
+  return applyFilterRecursive(data, 0);
+};
+
+const mergeResults = (results) => {
+  const merge = (target, source) => {
+    if (Array.isArray(source)) {
+      return source.map((item, index) =>
+        merge(Array.isArray(target) ? target[index] : undefined, item),
+      );
+    }
+    if (source && typeof source === "object") {
+      target = target || {};
+      Object.keys(source).forEach((key) => {
+        target[key] = merge(target[key], source[key]);
+      });
+      return target;
+    }
+    return source;
+  };
+
+  return results.reduce((acc, result) => merge(acc, result), {});
 };
 
 export default function Component() {
@@ -111,12 +120,24 @@ export default function Component() {
 
   const applyFilters = useCallback(
     debounce((filterString: string, json: any) => {
-      const filterArray = filterString
-        .split("\n")
-        .filter((f) => f.trim() !== "");
-      const { result, errors } = filterJSON(json, filterArray);
-      setFilteredJSON(result);
-      setErrors(errors);
+      try {
+        const filterArray = filterString
+          .split("\n")
+          .filter((f) => f.trim() !== "");
+        const filteredResults = filterArray
+          .map((filter) => applyFilter(json, filter))
+          .filter((result) => result !== undefined);
+
+        if (filteredResults.length === 0) {
+          setFilteredJSON({});
+        } else {
+          const mergedResult = mergeResults(filteredResults);
+          setFilteredJSON(mergedResult);
+        }
+        setErrors([]);
+      } catch (e) {
+        setErrors(["Invalid JSON input or filter"]);
+      }
     }, 300),
     [],
   );
@@ -166,13 +187,12 @@ export default function Component() {
           <ScrollArea className="overflow-scroll">
             <ReactJson
               src={filteredJSON}
-              theme="twilight"
               displayDataTypes={false}
               displayObjectSize={false}
               enableClipboard={false}
               collapsed={false}
               collapseStringsAfterLength={50}
-              indentWidth={2}
+              indentWidth={4}
               name={null}
             />
           </ScrollArea>
