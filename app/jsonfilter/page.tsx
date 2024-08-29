@@ -1,42 +1,57 @@
 "use client";
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useEffect, useCallback } from "react";
 import ReactJson from "react-json-view";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { debounce } from "lodash-es";
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
-const defaultJSON = {
-  id: "1234",
-  object: "ruleset",
-  name: "My Ruleset",
-  created_at: "2023-04-01T12:00:00Z",
-  updated_at: "2023-04-02T14:30:00Z",
-  ruleset_links: [
+const defaultJSON = {};
+
+interface AppState {
+  jsonInput: string;
+  parsedJSON: any;
+  filters: string;
+  filteredJSON: any;
+  errors: string[];
+  setJsonInput: (input: string) => void;
+  setFilters: (filters: string) => void;
+  setFilteredJSON: (json: any) => void;
+  setErrors: (errors: string[]) => void;
+}
+
+const useAppStore = create<AppState>()(
+  persist(
+    (set) => ({
+      jsonInput: JSON.stringify(defaultJSON, null, 2),
+      parsedJSON: defaultJSON,
+      filters: "",
+      filteredJSON: defaultJSON,
+      errors: [],
+      setJsonInput: (input) =>
+        set((state) => {
+          try {
+            const parsed = JSON.parse(input);
+            return { jsonInput: input, parsedJSON: parsed, errors: [] };
+          } catch (error) {
+            return {
+              jsonInput: input,
+              errors: ["Invalid JSON: Please check your input"],
+            };
+          }
+        }),
+      setFilters: (filters) => set({ filters }),
+      setFilteredJSON: (json) => set({ filteredJSON: json }),
+      setErrors: (errors) => set({ errors }),
+    }),
     {
-      id: "link1",
-      object: "ruleset_link",
-      ruleset_id: "1234",
-      linked_ruleset_id: "5678",
+      name: "snippetstudio/jsonfilter",
+      getStorage: () => localStorage,
     },
-    {
-      id: "link2",
-      object: "ruleset_link",
-      ruleset_id: "1234",
-      linked_ruleset_id: "9012",
-    },
-  ],
-  rules: [
-    {
-      id: "rule1",
-      description: "First rule",
-    },
-    {
-      id: "rule2",
-      description: "Second rule",
-    },
-  ],
-};
+  ),
+);
 
 const filterJSON = (
   json: any,
@@ -82,13 +97,17 @@ const filterJSON = (
 };
 
 export default function Component() {
-  const [jsonInput, setJsonInput] = useState<string>(
-    JSON.stringify(defaultJSON, null, 2),
-  );
-  const [parsedJSON, setParsedJSON] = useState<any>(defaultJSON);
-  const [filters, setFilters] = useState<string>("");
-  const [filteredJSON, setFilteredJSON] = useState<any>(defaultJSON);
-  const [errors, setErrors] = useState<string[]>([]);
+  const {
+    jsonInput,
+    parsedJSON,
+    filters,
+    filteredJSON,
+    errors,
+    setJsonInput,
+    setFilters,
+    setFilteredJSON,
+    setErrors,
+  } = useAppStore();
 
   const applyFilters = useCallback(
     debounce((filterString: string, json: any) => {
@@ -110,13 +129,6 @@ export default function Component() {
     event: React.ChangeEvent<HTMLTextAreaElement>,
   ) => {
     setJsonInput(event.target.value);
-    try {
-      const parsed = JSON.parse(event.target.value);
-      setParsedJSON(parsed);
-      setErrors([]);
-    } catch (error) {
-      setErrors(["Invalid JSON: Please check your input"]);
-    }
   };
 
   const handleFilterChange = (
